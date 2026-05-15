@@ -14,17 +14,17 @@ jobs:
 
     # ── 1. Baixar o código ─────────────────────────────────────
     - name: Checkout codigo
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     # ── 2. Configurar Python 3.10 ──────────────────────────────
     - name: Configurar Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
     # ── 3. Cache do Buildozer (evita baixar NDK/SDK toda vez) ──
     - name: Cache Buildozer
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
@@ -87,9 +87,8 @@ jobs:
 
     # ── 8. Publicar APK como artefato para download ────────────
     - name: Publicar APK
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: BaixeTube-APK
         path: bin/*.apk
         retention-days: 7
-
