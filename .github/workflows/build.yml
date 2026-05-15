@@ -3,7 +3,7 @@ name: Build APK BaixeTube
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # permite rodar manualmente pelo site
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,27 +12,23 @@ jobs:
 
     steps:
 
-    # ── 1. Baixar o código ─────────────────────────────────────
     - name: Checkout codigo
       uses: actions/checkout@v4
 
-    # ── 2. Configurar Python 3.10 ──────────────────────────────
     - name: Configurar Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    # ── 3. Cache do Buildozer (evita baixar NDK/SDK toda vez) ──
     - name: Cache Buildozer
       uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
           ~/.gradle
-        key: buildozer-${{ runner.os }}-v1
+        key: buildozer-${{ runner.os }}-v2
         restore-keys: buildozer-${{ runner.os }}-
 
-    # ── 4. Dependências do sistema ─────────────────────────────
     - name: Instalar dependencias do sistema
       run: |
         sudo apt-get update -qq
@@ -43,7 +39,6 @@ jobs:
           libffi-dev libssl-dev build-essential \
           ccache cmake
 
-    # ── 5. Dependências Python ─────────────────────────────────
     - name: Instalar dependencias Python
       run: |
         pip install --upgrade pip
@@ -52,40 +47,44 @@ jobs:
         pip install buildozer==1.5.0
         pip install python-for-android==2023.9.16
 
-    # ── 6. Instalar Android cmdline-tools ──────────────────────
     - name: Instalar Android SDK cmdline-tools
       run: |
-        SDK=/root/.buildozer/android/platform/android-sdk
+        SDK=$HOME/.buildozer/android/platform/android-sdk
         TOOLS=$SDK/cmdline-tools/latest
         mkdir -p $TOOLS $SDK/licenses
 
-        # Licencas
         echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK/licenses/android-sdk-license
         echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
 
-        # Download cmdline-tools
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip
         unzip -q /tmp/cmdtools.zip -d /tmp/cmdtools
         cp -r /tmp/cmdtools/cmdline-tools/. $TOOLS/
 
-        # Instalar pacotes SDK
-        yes | $TOOLS/bin/sdkmanager --sdk_root=$SDK "platform-tools" "build-tools;34.0.0" "platforms;android-33"
+        yes | $TOOLS/bin/sdkmanager --sdk_root=$SDK \
+          "platform-tools" "build-tools;34.0.0" "platforms;android-33"
 
-        # Link de compatibilidade
         mkdir -p $SDK/tools/bin
         ln -sf $TOOLS/bin/sdkmanager $SDK/tools/bin/sdkmanager
 
-        echo "SDK OK: $(ls $SDK)"
+        echo "ANDROIDSDK=$SDK" >> $GITHUB_ENV
+        echo "SDK pronto: $(ls $SDK)"
 
-    # ── 7. Build da APK ────────────────────────────────────────
     - name: Build APK
       env:
         BUILDOZER_WARN_ON_ROOT: "0"
+        ANDROIDSDK: ${{ env.ANDROIDSDK }}
       run: |
-        cd $GITHUB_WORKSPACE
+        # Atualiza spec com caminho correto do SDK/NDK
+        SDK=$HOME/.buildozer/android/platform/android-sdk
+        NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
+
+        # Injeta caminhos no spec apenas se ainda nao existirem
+        if ! grep -q "android.sdk_path" buildozer.spec; then
+          sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
+        fi
+
         buildozer -v android debug
 
-    # ── 8. Publicar APK como artefato para download ────────────
     - name: Publicar APK
       uses: actions/upload-artifact@v4
       with:
