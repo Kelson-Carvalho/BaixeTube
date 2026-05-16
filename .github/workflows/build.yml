@@ -26,13 +26,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Verificar ambiente
-      run: |
-        java -version
-        python3 --version
-        echo "SDK: $(ls /usr/local/lib/android/sdk/)"
-        echo "NDK: $(ls /usr/local/lib/android/sdk/ndk/)"
-
     - name: Instalar dependencias do sistema
       run: |
         sudo apt-get update -qq
@@ -50,23 +43,38 @@ jobs:
         pip install cython==0.29.33
         pip install buildozer==1.5.0
         pip install python-for-android==2023.9.16
-        buildozer version
 
-    - name: Aceitar licencas SDK
+    - name: Corrigir sdkmanager e aceitar licencas
       run: |
         SDK=/usr/local/lib/android/sdk
-        mkdir -p $SDK/licenses
-        printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK/licenses/android-sdk-license
-        printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
-        printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK/licenses/intel-android-extra-license
+
+        # Achar onde o sdkmanager realmente esta
+        echo "=== Procurando sdkmanager ==="
+        find $SDK -name "sdkmanager" 2>/dev/null
+
+        # Criar link no caminho que o buildozer espera
+        sudo mkdir -p $SDK/tools/bin
+        SDKMANAGER=$(find $SDK -name "sdkmanager" | head -1)
+        echo "sdkmanager encontrado em: $SDKMANAGER"
+        sudo ln -sf $SDKMANAGER $SDK/tools/bin/sdkmanager
+        echo "Link criado: $(ls -la $SDK/tools/bin/sdkmanager)"
+
+        # Aceitar licencas
+        sudo mkdir -p $SDK/licenses
+        printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee $SDK/licenses/android-sdk-license
+        printf "\n84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee $SDK/licenses/android-sdk-preview-license
+        printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" | sudo tee $SDK/licenses/intel-android-extra-license
+
+        # Aceitar via sdkmanager tambem
+        yes | $SDKMANAGER --sdk_root=$SDK --licenses 2>/dev/null || true
         echo "Licencas OK"
 
     - name: Preparar buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$(ls -d $SDK/ndk/* | head -1)
-        echo "Usando SDK: $SDK"
-        echo "Usando NDK: $NDK"
+        echo "SDK: $SDK"
+        echo "NDK: $NDK"
 
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
@@ -87,12 +95,16 @@ jobs:
     - name: Localizar APK
       if: always()
       run: |
-        echo "=== APKs no workspace ==="
-        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma"
-        echo "=== APKs no buildozer ==="
-        find ~/.buildozer -name "*.apk" 2>/dev/null | head -5 || echo "Nenhuma"
-        echo "=== bin/ ==="
+        echo "=== APKs ==="
+        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma no workspace"
+        find ~/.buildozer -name "*.apk" 2>/dev/null | head -5 || echo "Nenhuma no buildozer"
         ls -la $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem bin/"
+
+    - name: Log de erro
+      if: failure()
+      run: |
+        find . -name "*.log" 2>/dev/null | head -5
+        find . -name "*.log" 2>/dev/null | head -1 | xargs tail -50 2>/dev/null || true
 
     - name: Publicar APK
       if: success()
