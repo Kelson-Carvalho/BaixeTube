@@ -44,10 +44,29 @@ jobs:
         pip install buildozer==1.5.0
         pip install python-for-android==2023.9.16
 
+    - name: Instalar NDK 25b manualmente
+      run: |
+        NDK_DIR=$HOME/.buildozer/android/platform
+        mkdir -p $NDK_DIR
+        if [ ! -d "$NDK_DIR/android-ndk-r25b" ]; then
+          echo "Baixando NDK r25b..."
+          wget -q --show-progress \
+            https://dl.google.com/android/repository/android-ndk-r25b-linux.zip \
+            -O /tmp/ndk.zip
+          echo "Extraindo NDK..."
+          unzip -q /tmp/ndk.zip -d $NDK_DIR
+          rm -f /tmp/ndk.zip
+          echo "NDK instalado em: $NDK_DIR/android-ndk-r25b"
+        else
+          echo "NDK ja existe"
+        fi
+        ls $NDK_DIR/
+
     - name: Corrigir sdkmanager e licencas
       run: |
         SDK=/usr/local/lib/android/sdk
         SDKMANAGER=$(find $SDK -name "sdkmanager" | head -1)
+        echo "sdkmanager: $SDKMANAGER"
         sudo mkdir -p $SDK/tools/bin
         sudo ln -sf $SDKMANAGER $SDK/tools/bin/sdkmanager
         sudo mkdir -p $SDK/licenses
@@ -58,7 +77,10 @@ jobs:
     - name: Preparar buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
-        NDK=$(ls -d $SDK/ndk/* | head -1)
+        NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
+        echo "SDK: $SDK"
+        echo "NDK: $NDK"
+
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         sed -i '/^android\.ndk /d' buildozer.spec
@@ -71,43 +93,27 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
-        set -o pipefail
         buildozer -v android debug 2>&1 | tee /tmp/build.log
         EXIT=${PIPESTATUS[0]}
-        echo "BUILD EXIT CODE: $EXIT"
-
-        echo ""
-        echo "=== ULTIMAS 30 LINHAS DO BUILD ==="
-        tail -30 /tmp/build.log
-
-        echo ""
-        echo "=== ERROS ENCONTRADOS ==="
-        grep -i "error\|exception\|traceback\|failed" /tmp/build.log | tail -20 || echo "Nenhum erro encontrado no grep"
-
+        echo "EXIT CODE: $EXIT"
+        echo "=== ULTIMAS 20 LINHAS ==="
+        tail -20 /tmp/build.log
+        echo "=== ERROS ==="
+        grep -i "error\|exception\|traceback" /tmp/build.log | grep -v "^#" | tail -15 || true
         exit $EXIT
-
-    - name: Localizar APK
-      if: always()
-      run: |
-        echo "=== APK no workspace ==="
-        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma"
-        echo "=== APK no work ==="
-        find /home/runner/work -name "*.apk" 2>/dev/null || echo "Nenhuma"
-        echo "=== bin/ ==="
-        ls -la $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem bin/"
 
     - name: Copiar APK para bin/
       if: always()
       run: |
         mkdir -p $GITHUB_WORKSPACE/bin
-        APK=$(find /home/runner/work -name "*.apk" 2>/dev/null | head -1)
+        APK=$(find /home/runner/work $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null | head -1)
         if [ -n "$APK" ]; then
           cp "$APK" $GITHUB_WORKSPACE/bin/
-          echo "Copiada: $APK"
+          echo "APK copiada: $APK"
+          ls -lh $GITHUB_WORKSPACE/bin/
         else
           echo "NENHUMA APK GERADA"
         fi
-        ls -la $GITHUB_WORKSPACE/bin/
 
     - name: Publicar APK
       if: always()
