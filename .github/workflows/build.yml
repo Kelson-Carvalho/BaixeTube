@@ -30,7 +30,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.buildozer
-        key: buildozer-${{ runner.os }}-v3
+        key: buildozer-${{ runner.os }}-v4
         restore-keys: buildozer-${{ runner.os }}-
 
     - name: Instalar dependencias do sistema
@@ -51,34 +51,24 @@ jobs:
         pip install buildozer==1.5.0
         pip install python-for-android==2023.9.16
 
-    - name: Aceitar licencas SDK existente
+    - name: Aceitar licencas SDK
       run: |
         SDK=/usr/local/lib/android/sdk
         mkdir -p $SDK/licenses
         echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK/licenses/android-sdk-license
         echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
         echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK/licenses/intel-android-extra-license
-        echo "Licencas aceitas"
-        echo "NDK disponivel: $(ls $SDK/ndk/)"
 
-    - name: Preparar buildozer.spec com SDK do runner
+    - name: Preparar buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$(ls -d $SDK/ndk/* | head -1)
-
-        echo "Usando SDK: $SDK"
-        echo "Usando NDK: $NDK"
-
-        # Remove linhas antigas de sdk/ndk se existirem
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         sed -i '/^android\.ndk =/d' buildozer.spec
-
-        # Injeta antes de [buildozer]
         sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
-
-        echo "=== buildozer.spec final ==="
-        cat buildozer.spec
+        echo "SDK: $SDK"
+        echo "NDK: $NDK"
 
     - name: Build APK
       env:
@@ -87,19 +77,30 @@ jobs:
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
         buildozer -v android debug 2>&1 | tee build_output.txt
-        echo "Exit code: $?"
+
+    - name: Localizar APK gerada
+      if: always()
+      run: |
+        echo "=== Procurando APK em todo o projeto ==="
+        find . -name "*.apk" 2>/dev/null
+        echo ""
+        echo "=== Conteudo da pasta bin (se existir) ==="
+        ls -la bin/ 2>/dev/null || echo "Pasta bin nao existe"
+        echo ""
+        echo "=== Procurando APK no buildozer ==="
+        find ~/.buildozer -name "*.apk" 2>/dev/null | head -10
 
     - name: Mostrar log se falhar
       if: failure()
       run: |
-        echo "=== Ultimas 80 linhas ==="
         tail -80 build_output.txt || true
-        echo "=== Erros encontrados ==="
         grep -i "error\|exception\|failed" build_output.txt | tail -30 || true
 
     - name: Publicar APK
       uses: actions/upload-artifact@v4
       with:
         name: BaixeTube-APK
-        path: bin/*.apk
+        path: |
+          bin/*.apk
+          **/*.apk
         retention-days: 7
