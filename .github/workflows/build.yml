@@ -26,13 +26,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    - name: Cache Buildozer
-      uses: actions/cache@v4
-      with:
-        path: ~/.buildozer
-        key: buildozer-${{ runner.os }}-v4
-        restore-keys: buildozer-${{ runner.os }}-
-
     - name: Instalar dependencias do sistema
       run: |
         sudo apt-get update -qq
@@ -55,20 +48,30 @@ jobs:
       run: |
         SDK=/usr/local/lib/android/sdk
         mkdir -p $SDK/licenses
-        echo -e "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK/licenses/android-sdk-license
-        echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
-        echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK/licenses/intel-android-extra-license
+        printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK/licenses/android-sdk-license
+        printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > $SDK/licenses/android-sdk-preview-license
+        printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK/licenses/intel-android-extra-license
+        echo "NDK disponivel:"
+        ls /usr/local/lib/android/sdk/ndk/
 
     - name: Preparar buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$(ls -d $SDK/ndk/* | head -1)
-        sed -i '/^android\.sdk_path/d' buildozer.spec
-        sed -i '/^android\.ndk_path/d' buildozer.spec
-        sed -i '/^android\.ndk =/d' buildozer.spec
-        sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
         echo "SDK: $SDK"
         echo "NDK: $NDK"
+
+        # Remove entradas antigas
+        sed -i '/^android\.sdk_path/d' buildozer.spec
+        sed -i '/^android\.ndk_path/d' buildozer.spec
+        sed -i '/^android\.ndk /d' buildozer.spec
+
+        # Adiciona caminhos corretos antes de [buildozer]
+        sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
+
+        echo ""
+        echo "=== buildozer.spec ==="
+        cat buildozer.spec
 
     - name: Build APK
       env:
@@ -76,31 +79,31 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
+        buildozer android clean
         buildozer -v android debug 2>&1 | tee build_output.txt
+        echo "BUILD EXIT: ${PIPESTATUS[0]}"
 
-    - name: Localizar APK gerada
+    - name: Localizar APK
       if: always()
       run: |
-        echo "=== Procurando APK em todo o projeto ==="
-        find . -name "*.apk" 2>/dev/null
+        echo "=== APKs encontradas ==="
+        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma APK no workspace"
+        find ~/.buildozer -name "*.apk" 2>/dev/null | head -5 || echo "Nenhuma APK no buildozer"
         echo ""
-        echo "=== Conteudo da pasta bin (se existir) ==="
-        ls -la bin/ 2>/dev/null || echo "Pasta bin nao existe"
-        echo ""
-        echo "=== Procurando APK no buildozer ==="
-        find ~/.buildozer -name "*.apk" 2>/dev/null | head -10
+        echo "=== Conteudo bin/ ==="
+        ls -la $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem pasta bin"
 
-    - name: Mostrar log se falhar
+    - name: Log de erro
       if: failure()
       run: |
-        tail -80 build_output.txt || true
-        grep -i "error\|exception\|failed" build_output.txt | tail -30 || true
+        echo "=== ULTIMAS 100 LINHAS ==="
+        tail -100 build_output.txt || true
 
     - name: Publicar APK
+      if: success()
       uses: actions/upload-artifact@v4
       with:
         name: BaixeTube-APK
-        path: |
-          bin/*.apk
-          **/*.apk
+        path: bin/*.apk
+        if-no-files-found: error
         retention-days: 7
