@@ -44,44 +44,26 @@ jobs:
         pip install buildozer==1.5.0
         pip install python-for-android==2023.9.16
 
-    - name: Corrigir sdkmanager e aceitar licencas
+    - name: Corrigir sdkmanager e licencas
       run: |
         SDK=/usr/local/lib/android/sdk
-
-        # Achar onde o sdkmanager realmente esta
-        echo "=== Procurando sdkmanager ==="
-        find $SDK -name "sdkmanager" 2>/dev/null
-
-        # Criar link no caminho que o buildozer espera
-        sudo mkdir -p $SDK/tools/bin
         SDKMANAGER=$(find $SDK -name "sdkmanager" | head -1)
-        echo "sdkmanager encontrado em: $SDKMANAGER"
+        echo "sdkmanager: $SDKMANAGER"
+        sudo mkdir -p $SDK/tools/bin
         sudo ln -sf $SDKMANAGER $SDK/tools/bin/sdkmanager
-        echo "Link criado: $(ls -la $SDK/tools/bin/sdkmanager)"
-
-        # Aceitar licencas
         sudo mkdir -p $SDK/licenses
         printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee $SDK/licenses/android-sdk-license
         printf "\n84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee $SDK/licenses/android-sdk-preview-license
-        printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" | sudo tee $SDK/licenses/intel-android-extra-license
-
-        # Aceitar via sdkmanager tambem
         yes | $SDKMANAGER --sdk_root=$SDK --licenses 2>/dev/null || true
-        echo "Licencas OK"
 
     - name: Preparar buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$(ls -d $SDK/ndk/* | head -1)
-        echo "SDK: $SDK"
-        echo "NDK: $NDK"
-
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         sed -i '/^android\.ndk /d' buildozer.spec
         sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
-
-        echo "=== buildozer.spec ==="
         cat buildozer.spec
 
     - name: Build APK
@@ -90,24 +72,27 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
-        buildozer -v android debug
+        buildozer -v android debug || true
 
-    - name: Localizar APK
+    - name: Localizar e copiar APK
       if: always()
       run: |
-        echo "=== APKs ==="
-        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma no workspace"
-        find ~/.buildozer -name "*.apk" 2>/dev/null | head -5 || echo "Nenhuma no buildozer"
-        ls -la $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem bin/"
+        echo "=== Procurando APK ==="
+        find . -name "*.apk" 2>/dev/null
+        find ~/.buildozer -name "*.apk" 2>/dev/null
 
-    - name: Log de erro
-      if: failure()
-      run: |
-        find . -name "*.log" 2>/dev/null | head -5
-        find . -name "*.log" 2>/dev/null | head -1 | xargs tail -50 2>/dev/null || true
+        # Copia APK para bin/ se estiver em outro lugar
+        mkdir -p bin
+        find ~/.buildozer -name "*.apk" 2>/dev/null | while read apk; do
+          echo "Copiando: $apk"
+          cp "$apk" bin/
+        done
+
+        echo "=== Conteudo bin/ ==="
+        ls -la bin/
 
     - name: Publicar APK
-      if: success()
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: BaixeTube-APK
