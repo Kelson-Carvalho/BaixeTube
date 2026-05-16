@@ -48,7 +48,6 @@ jobs:
       run: |
         SDK=/usr/local/lib/android/sdk
         SDKMANAGER=$(find $SDK -name "sdkmanager" | head -1)
-        echo "sdkmanager: $SDKMANAGER"
         sudo mkdir -p $SDK/tools/bin
         sudo ln -sf $SDKMANAGER $SDK/tools/bin/sdkmanager
         sudo mkdir -p $SDK/licenses
@@ -72,24 +71,43 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
-        buildozer -v android debug || true
+        set -o pipefail
+        buildozer -v android debug 2>&1 | tee /tmp/build.log
+        EXIT=${PIPESTATUS[0]}
+        echo "BUILD EXIT CODE: $EXIT"
 
-    - name: Localizar e copiar APK
+        echo ""
+        echo "=== ULTIMAS 30 LINHAS DO BUILD ==="
+        tail -30 /tmp/build.log
+
+        echo ""
+        echo "=== ERROS ENCONTRADOS ==="
+        grep -i "error\|exception\|traceback\|failed" /tmp/build.log | tail -20 || echo "Nenhum erro encontrado no grep"
+
+        exit $EXIT
+
+    - name: Localizar APK
       if: always()
       run: |
-        echo "=== Procurando APK ==="
-        find . -name "*.apk" 2>/dev/null
-        find ~/.buildozer -name "*.apk" 2>/dev/null
+        echo "=== APK no workspace ==="
+        find $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null || echo "Nenhuma"
+        echo "=== APK no work ==="
+        find /home/runner/work -name "*.apk" 2>/dev/null || echo "Nenhuma"
+        echo "=== bin/ ==="
+        ls -la $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem bin/"
 
-        # Copia APK para bin/ se estiver em outro lugar
-        mkdir -p bin
-        find ~/.buildozer -name "*.apk" 2>/dev/null | while read apk; do
-          echo "Copiando: $apk"
-          cp "$apk" bin/
-        done
-
-        echo "=== Conteudo bin/ ==="
-        ls -la bin/
+    - name: Copiar APK para bin/
+      if: always()
+      run: |
+        mkdir -p $GITHUB_WORKSPACE/bin
+        APK=$(find /home/runner/work -name "*.apk" 2>/dev/null | head -1)
+        if [ -n "$APK" ]; then
+          cp "$APK" $GITHUB_WORKSPACE/bin/
+          echo "Copiada: $APK"
+        else
+          echo "NENHUMA APK GERADA"
+        fi
+        ls -la $GITHUB_WORKSPACE/bin/
 
     - name: Publicar APK
       if: always()
