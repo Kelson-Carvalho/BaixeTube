@@ -80,7 +80,7 @@ jobs:
         buildozer -v android debug 2>&1 | tee /tmp/build.log || true
         tail -5 /tmp/build.log
 
-    - name: Corrigir build.gradle e rodar Gradle
+    - name: Rodar Gradle
       if: always()
       run: |
         SDK=/usr/local/lib/android/sdk
@@ -91,27 +91,62 @@ jobs:
                -path "*/android-project/gradlew" 2>/dev/null | head -1 | xargs -I{} dirname {})
         echo "Projeto: $PROJ"
 
-        # local.properties correto
         echo "sdk.dir=$SDK" > $PROJ/local.properties
         echo "ndk.dir=$NDK" >> $PROJ/local.properties
-        cat $PROJ/local.properties
 
-        # Mostrar build.gradle antes
-        echo "=== app/build.gradle ANTES ==="
-        cat $PROJ/app/build.gradle
+        # Substituir build.gradle usando Python (mais confiavel que heredoc)
+        python3 << PYEOF
+import os
+proj = "$PROJ"
+bg = os.path.join(proj, "app", "build.gradle")
+novo = """def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
+def buildAsApplication = !buildAsLibrary
+if (buildAsApplication) {
+    apply plugin: 'com.android.application'
+}
+else {
+    apply plugin: 'com.android.library'
+}
 
-        # Remover APENAS o bloco externalNativeBuild com sed (mais seguro que Python)
-        # Isso evita o erro de parse do Gradle
-        sed -i '/externalNativeBuild {/,/^    }/d' $PROJ/app/build.gradle
+android {
+    compileSdkVersion 34
+    defaultConfig {
+        if (buildAsApplication) {
+            applicationId "org.baixetube"
+        }
+        minSdkVersion 26
+        targetSdkVersion 34
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
 
-        echo "=== app/build.gradle DEPOIS ==="
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}
+"""
+with open(bg, 'w') as f:
+    f.write(novo)
+print("build.gradle substituido com sucesso")
+print("Linhas:", len(novo.splitlines()))
+PYEOF
+
+        echo "=== build.gradle final ==="
         cat $PROJ/app/build.gradle
 
         chmod +x $PROJ/gradlew
         export JAVA_HOME=$JAVA
         export ANDROID_HOME=$SDK
         export ANDROID_SDK_ROOT=$SDK
-        export ANDROID_NDK_HOME=$NDK
         export PATH=$JAVA/bin:$PATH
 
         cd $PROJ && ./gradlew assembleDebug 2>&1 | tail -40
