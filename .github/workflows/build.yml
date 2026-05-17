@@ -42,7 +42,7 @@ jobs:
         pip install -q buildozer==1.5.0
         pip install -q python-for-android==2023.9.16
 
-    - name: SDK licencas e sdkmanager
+    - name: SDK licencas
       run: |
         SDK=/usr/local/lib/android/sdk
         SDKM=$(find $SDK -name "sdkmanager" | head -1)
@@ -52,7 +52,7 @@ jobs:
         printf "\n84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee $SDK/licenses/android-sdk-preview-license
         yes | $SDKM --sdk_root=$SDK --licenses 2>/dev/null || true
 
-    - name: Instalar NDK 25b
+    - name: NDK 25b
       run: |
         NDK_DIR=$HOME/.buildozer/android/platform
         mkdir -p $NDK_DIR
@@ -61,7 +61,6 @@ jobs:
           unzip -q /tmp/ndk.zip -d $NDK_DIR
           rm -f /tmp/ndk.zip
         fi
-        echo "NDK: $(ls $NDK_DIR/)"
 
     - name: buildozer.spec
       run: |
@@ -71,90 +70,58 @@ jobs:
         sed -i '/^android\.ndk_path/d' buildozer.spec
         sed -i '/^android\.ndk /d' buildozer.spec
         sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
-        cat buildozer.spec
 
     - name: Build APK
       env:
         BUILDOZER_WARN_ON_ROOT: "0"
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        ANDROID_NDK_HOME: ${{ env.HOME }}/.buildozer/android/platform/android-ndk-r25b
       run: |
         buildozer -v android debug 2>&1 | tee /tmp/build.log || true
-        echo "=== ULTIMAS 20 LINHAS ==="
-        tail -20 /tmp/build.log
+        tail -5 /tmp/build.log
 
-    # ── CORREÇÃO DO configureNdkBuildDebug ──────────
-    - name: Corrigir NDK e rodar Gradle manualmente
+    - name: Corrigir build.gradle e rodar Gradle
       if: always()
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
-        JAVA_HOME_PATH=$(dirname $(dirname $(readlink -f $(which java))))
+        JAVA=$(dirname $(dirname $(readlink -f $(which java))))
 
-        # Achar o projeto Android gerado pelo buildozer
         PROJ=$(find $GITHUB_WORKSPACE/.buildozer -name "gradlew" \
                -path "*/android-project/gradlew" 2>/dev/null | head -1 | xargs -I{} dirname {})
-
-        if [ -z "$PROJ" ]; then
-          echo "Projeto Android nao encontrado"
-          exit 1
-        fi
         echo "Projeto: $PROJ"
 
-        # Criar local.properties com SDK E NDK corretos
-        cat > $PROJ/local.properties << LOCALPROPS
-        sdk.dir=$SDK
-        ndk.dir=$NDK
-        LOCALPROPS
-
-        # Corrigir o app/build.gradle para usar NDK path absoluto
-        # O erro configureNdkBuildDebug ocorre porque o path do Android.mk
-        # nao e encontrado - vamos desabilitar o ndkBuild externo
-        # e deixar so o cmake comentado
-        python3 - << PYFIX
-        import re
-
-        bg = '$PROJ/app/build.gradle'
-        with open(bg) as f:
-            content = f.read()
-
-        # Substituir o bloco externalNativeBuild para usar cmake vazio
-        # ou remover ndkBuild path que nao existe
-        new_content = re.sub(
-            r'externalNativeBuild\s*\{[^}]*ndkBuild\s*\{[^}]*\}[^}]*\}',
-            '',
-            content,
-            flags=re.DOTALL
-        )
-
-        with open(bg, 'w') as f:
-            f.write(new_content)
-        print("build.gradle corrigido")
-        PYFIX
-
-        # Criar local.properties sem espacos iniciais
+        # local.properties correto
         echo "sdk.dir=$SDK" > $PROJ/local.properties
         echo "ndk.dir=$NDK" >> $PROJ/local.properties
+        cat $PROJ/local.properties
+
+        # Mostrar build.gradle antes
+        echo "=== app/build.gradle ANTES ==="
+        cat $PROJ/app/build.gradle
+
+        # Remover APENAS o bloco externalNativeBuild com sed (mais seguro que Python)
+        # Isso evita o erro de parse do Gradle
+        sed -i '/externalNativeBuild {/,/^    }/d' $PROJ/app/build.gradle
+
+        echo "=== app/build.gradle DEPOIS ==="
+        cat $PROJ/app/build.gradle
 
         chmod +x $PROJ/gradlew
-
-        export JAVA_HOME=$JAVA_HOME_PATH
+        export JAVA_HOME=$JAVA
         export ANDROID_HOME=$SDK
         export ANDROID_SDK_ROOT=$SDK
         export ANDROID_NDK_HOME=$NDK
-        export PATH=$JAVA_HOME/bin:$PATH
+        export PATH=$JAVA/bin:$PATH
 
-        echo "Rodando Gradle..."
         cd $PROJ && ./gradlew assembleDebug 2>&1 | tail -40
 
-        # Copiar APK
         mkdir -p $GITHUB_WORKSPACE/bin
         find $PROJ -name "*.apk" 2>/dev/null | while read apk; do
           cp "$apk" $GITHUB_WORKSPACE/bin/
-          echo "APK: $apk"
+          echo "APK copiada: $apk"
         done
-        ls -lh $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem APK"
+        ls -lh $GITHUB_WORKSPACE/bin/ || echo "Sem APK"
 
     - name: Upload APK
       if: always()
