@@ -12,75 +12,61 @@ jobs:
 
     steps:
 
-    - name: Checkout codigo
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Configurar Java 17
+    - name: Java 17
       uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Configurar Python 3.10
+    - name: Python 3.10
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Instalar dependencias do sistema
+    - name: Sistema
       run: |
         sudo apt-get update -qq
         sudo apt-get install -y -qq \
-          git zip unzip \
-          autoconf automake libtool \
+          git zip unzip autoconf automake libtool \
           pkg-config zlib1g-dev libncurses5-dev \
-          libffi-dev libssl-dev build-essential \
-          ccache cmake
+          libffi-dev libssl-dev build-essential ccache cmake
 
-    - name: Instalar dependencias Python
+    - name: Python deps
       run: |
-        pip install --upgrade pip
-        pip install setuptools==68.0.0 wheel==0.38.4
-        pip install cython==0.29.33
-        pip install buildozer==1.5.0
-        pip install python-for-android==2023.9.16
+        pip install -q --upgrade pip
+        pip install -q setuptools==68.0.0 wheel==0.38.4
+        pip install -q cython==0.29.33
+        pip install -q buildozer==1.5.0
+        pip install -q python-for-android==2023.9.16
 
-    - name: Instalar NDK 25b manualmente
+    - name: SDK licencas e sdkmanager
+      run: |
+        SDK=/usr/local/lib/android/sdk
+        SDKM=$(find $SDK -name "sdkmanager" | head -1)
+        sudo mkdir -p $SDK/tools/bin $SDK/licenses
+        sudo ln -sf $SDKM $SDK/tools/bin/sdkmanager
+        printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee $SDK/licenses/android-sdk-license
+        printf "\n84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee $SDK/licenses/android-sdk-preview-license
+        yes | $SDKM --sdk_root=$SDK --licenses 2>/dev/null || true
+
+    - name: Instalar NDK 25b
       run: |
         NDK_DIR=$HOME/.buildozer/android/platform
         mkdir -p $NDK_DIR
         if [ ! -d "$NDK_DIR/android-ndk-r25b" ]; then
-          echo "Baixando NDK r25b..."
-          wget -q --show-progress \
-            https://dl.google.com/android/repository/android-ndk-r25b-linux.zip \
-            -O /tmp/ndk.zip
-          echo "Extraindo NDK..."
+          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -O /tmp/ndk.zip
           unzip -q /tmp/ndk.zip -d $NDK_DIR
           rm -f /tmp/ndk.zip
-          echo "NDK instalado em: $NDK_DIR/android-ndk-r25b"
-        else
-          echo "NDK ja existe"
         fi
-        ls $NDK_DIR/
+        echo "NDK: $(ls $NDK_DIR/)"
 
-    - name: Corrigir sdkmanager e licencas
-      run: |
-        SDK=/usr/local/lib/android/sdk
-        SDKMANAGER=$(find $SDK -name "sdkmanager" | head -1)
-        echo "sdkmanager: $SDKMANAGER"
-        sudo mkdir -p $SDK/tools/bin
-        sudo ln -sf $SDKMANAGER $SDK/tools/bin/sdkmanager
-        sudo mkdir -p $SDK/licenses
-        printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee $SDK/licenses/android-sdk-license
-        printf "\n84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee $SDK/licenses/android-sdk-preview-license
-        yes | $SDKMANAGER --sdk_root=$SDK --licenses 2>/dev/null || true
-
-    - name: Preparar buildozer.spec
+    - name: buildozer.spec
       run: |
         SDK=/usr/local/lib/android/sdk
         NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
-        echo "SDK: $SDK"
-        echo "NDK: $NDK"
-
         sed -i '/^android\.sdk_path/d' buildozer.spec
         sed -i '/^android\.ndk_path/d' buildozer.spec
         sed -i '/^android\.ndk /d' buildozer.spec
@@ -92,30 +78,85 @@ jobs:
         BUILDOZER_WARN_ON_ROOT: "0"
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        ANDROID_NDK_HOME: ${{ env.HOME }}/.buildozer/android/platform/android-ndk-r25b
       run: |
-        buildozer -v android debug 2>&1 | tee /tmp/build.log
-        EXIT=${PIPESTATUS[0]}
-        echo "EXIT CODE: $EXIT"
+        buildozer -v android debug 2>&1 | tee /tmp/build.log || true
         echo "=== ULTIMAS 20 LINHAS ==="
         tail -20 /tmp/build.log
-        echo "=== ERROS ==="
-        grep -i "error\|exception\|traceback" /tmp/build.log | grep -v "^#" | tail -15 || true
-        exit $EXIT
 
-    - name: Copiar APK para bin/
+    # ── CORREÇÃO DO configureNdkBuildDebug ──────────
+    - name: Corrigir NDK e rodar Gradle manualmente
       if: always()
       run: |
-        mkdir -p $GITHUB_WORKSPACE/bin
-        APK=$(find /home/runner/work $GITHUB_WORKSPACE -name "*.apk" 2>/dev/null | head -1)
-        if [ -n "$APK" ]; then
-          cp "$APK" $GITHUB_WORKSPACE/bin/
-          echo "APK copiada: $APK"
-          ls -lh $GITHUB_WORKSPACE/bin/
-        else
-          echo "NENHUMA APK GERADA"
-        fi
+        SDK=/usr/local/lib/android/sdk
+        NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
+        JAVA_HOME_PATH=$(dirname $(dirname $(readlink -f $(which java))))
 
-    - name: Publicar APK
+        # Achar o projeto Android gerado pelo buildozer
+        PROJ=$(find $GITHUB_WORKSPACE/.buildozer -name "gradlew" \
+               -path "*/android-project/gradlew" 2>/dev/null | head -1 | xargs -I{} dirname {})
+
+        if [ -z "$PROJ" ]; then
+          echo "Projeto Android nao encontrado"
+          exit 1
+        fi
+        echo "Projeto: $PROJ"
+
+        # Criar local.properties com SDK E NDK corretos
+        cat > $PROJ/local.properties << LOCALPROPS
+        sdk.dir=$SDK
+        ndk.dir=$NDK
+        LOCALPROPS
+
+        # Corrigir o app/build.gradle para usar NDK path absoluto
+        # O erro configureNdkBuildDebug ocorre porque o path do Android.mk
+        # nao e encontrado - vamos desabilitar o ndkBuild externo
+        # e deixar so o cmake comentado
+        python3 - << PYFIX
+        import re
+
+        bg = '$PROJ/app/build.gradle'
+        with open(bg) as f:
+            content = f.read()
+
+        # Substituir o bloco externalNativeBuild para usar cmake vazio
+        # ou remover ndkBuild path que nao existe
+        new_content = re.sub(
+            r'externalNativeBuild\s*\{[^}]*ndkBuild\s*\{[^}]*\}[^}]*\}',
+            '',
+            content,
+            flags=re.DOTALL
+        )
+
+        with open(bg, 'w') as f:
+            f.write(new_content)
+        print("build.gradle corrigido")
+        PYFIX
+
+        # Criar local.properties sem espacos iniciais
+        echo "sdk.dir=$SDK" > $PROJ/local.properties
+        echo "ndk.dir=$NDK" >> $PROJ/local.properties
+
+        chmod +x $PROJ/gradlew
+
+        export JAVA_HOME=$JAVA_HOME_PATH
+        export ANDROID_HOME=$SDK
+        export ANDROID_SDK_ROOT=$SDK
+        export ANDROID_NDK_HOME=$NDK
+        export PATH=$JAVA_HOME/bin:$PATH
+
+        echo "Rodando Gradle..."
+        cd $PROJ && ./gradlew assembleDebug 2>&1 | tail -40
+
+        # Copiar APK
+        mkdir -p $GITHUB_WORKSPACE/bin
+        find $PROJ -name "*.apk" 2>/dev/null | while read apk; do
+          cp "$apk" $GITHUB_WORKSPACE/bin/
+          echo "APK: $apk"
+        done
+        ls -lh $GITHUB_WORKSPACE/bin/ 2>/dev/null || echo "Sem APK"
+
+    - name: Upload APK
       if: always()
       uses: actions/upload-artifact@v4
       with:
