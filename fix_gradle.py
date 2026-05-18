@@ -1,50 +1,42 @@
-import os, sys
+import os
+import sys
 
-proj = sys.argv[1]
-bg   = os.path.join(proj, "app", "build.gradle")
 
-linhas = [
-    "def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');",
-    "def buildAsApplication = !buildAsLibrary",
-    "if (buildAsApplication) {",
-    "    apply plugin: 'com.android.application'",
-    "}",
-    "else {",
-    "    apply plugin: 'com.android.library'",
-    "}",
-    "",
-    "android {",
-    "    namespace 'org.baixetube'",
-    "    compileSdkVersion 34",
-    "    defaultConfig {",
-    "        if (buildAsApplication) {",
-    '            applicationId "org.baixetube"',
-    "        }",
-    "        minSdkVersion 26",
-    "        targetSdkVersion 34",
-    "        versionCode 1",
-    '        versionName "1.0"',
-    "    }",
-    "    buildTypes {",
-    "        release {",
-    "            minifyEnabled false",
-    "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'",
-    "        }",
-    "    }",
-    "    lintOptions {",
-    "        abortOnError false",
-    "    }",
-    "}",
-    "",
-    "dependencies {",
-    "    implementation fileTree(include: ['*.jar'], dir: 'libs')",
-    "}",
-]
+def corrigir(proj):
+    bg = os.path.join(proj, "app", "build.gradle")
+    if not os.path.exists(bg):
+        print(f"build.gradle nao encontrado em: {bg}")
+        return False
 
-novo = "\n".join(linhas) + "\n"
+    with open(bg) as f:
+        conteudo = f.read()
 
-with open(bg, "w") as f:
-    f.write(novo)
+    # Adiciona namespace se nao tiver
+    if "namespace" not in conteudo:
+        conteudo = conteudo.replace(
+            "android {",
+            "android {\n    namespace 'org.baixetube'"
+        )
+        with open(bg, "w") as f:
+            f.write(conteudo)
+        print(f"namespace adicionado em: {bg}")
+    else:
+        print("namespace ja existe")
 
-print("build.gradle substituido com sucesso!")
-print(open(bg).read())
+    return True
+
+
+if __name__ == "__main__":
+    modo = sys.argv[1] if len(sys.argv) > 1 else ""
+
+    if modo == "pre":
+        # Modo pre-build: ainda nao tem o projeto gerado, nao faz nada
+        print("Modo pre-build: aguardando buildozer gerar o projeto")
+
+    else:
+        # Modo pos-build: recebe o caminho do projeto como argumento
+        proj = sys.argv[1]
+        if corrigir(proj):
+            print("build.gradle corrigido com sucesso!")
+        else:
+            print("Nao foi possivel corrigir")
