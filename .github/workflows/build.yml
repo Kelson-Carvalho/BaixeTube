@@ -71,26 +71,43 @@ jobs:
         sed -i '/^android\.ndk /d' buildozer.spec
         sed -i "/^\[buildozer\]/i android.sdk_path = $SDK\nandroid.ndk_path = $NDK\n" buildozer.spec
 
-    - name: Build APK
+    - name: Corrigir namespace no build.gradle do p4a
+      run: |
+        python3 fix_gradle.py pre
+
+    - name: Build APK completo
       env:
         BUILDOZER_WARN_ON_ROOT: "0"
         ANDROID_HOME: /usr/local/lib/android/sdk
         ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       run: |
         buildozer -v android debug 2>&1 | tee /tmp/build.log || true
-        tail -5 /tmp/build.log
+        echo "=== RESULTADO ==="
+        find . -name "*.apk" 2>/dev/null | head -5
+        ls -lh bin/*.apk 2>/dev/null || echo "APK nao gerada pelo buildozer"
 
-    - name: Rodar Gradle
+    - name: Se falhou no Gradle - corrigir e tentar novamente
       if: always()
       run: |
+        # Verificar se APK ja existe
+        if ls bin/*.apk 2>/dev/null | head -1 | grep -q apk; then
+          echo "APK ja existe!"
+          exit 0
+        fi
+
         SDK=/usr/local/lib/android/sdk
         NDK=$HOME/.buildozer/android/platform/android-ndk-r25b
         JAVA=$(dirname $(dirname $(readlink -f $(which java))))
 
         PROJ=$(find $GITHUB_WORKSPACE/.buildozer -name "gradlew" \
                -path "*/android-project/gradlew" 2>/dev/null | head -1 | xargs -I{} dirname {})
-        echo "Projeto: $PROJ"
 
+        if [ -z "$PROJ" ]; then
+          echo "Projeto Gradle nao encontrado"
+          exit 0
+        fi
+
+        echo "Corrigindo: $PROJ"
         echo "sdk.dir=$SDK" > $PROJ/local.properties
         echo "ndk.dir=$NDK" >> $PROJ/local.properties
 
@@ -102,12 +119,12 @@ jobs:
         export ANDROID_SDK_ROOT=$SDK
         export PATH=$JAVA/bin:$PATH
 
-        cd $PROJ && ./gradlew assembleDebug 2>&1 | tail -40
+        cd $PROJ && ./gradlew assembleDebug 2>&1 | tail -30
 
         mkdir -p $GITHUB_WORKSPACE/bin
         find $PROJ -name "*.apk" 2>/dev/null | while read apk; do
           cp "$apk" $GITHUB_WORKSPACE/bin/
-          echo "APK: $apk"
+          echo "APK copiada: $apk"
         done
         ls -lh $GITHUB_WORKSPACE/bin/ || echo "Sem APK"
 
