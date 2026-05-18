@@ -94,54 +94,7 @@ jobs:
         echo "sdk.dir=$SDK" > $PROJ/local.properties
         echo "ndk.dir=$NDK" >> $PROJ/local.properties
 
-        # Substituir build.gradle usando Python (mais confiavel que heredoc)
-        python3 << PYEOF
-import os
-proj = "$PROJ"
-bg = os.path.join(proj, "app", "build.gradle")
-novo = """def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');
-def buildAsApplication = !buildAsLibrary
-if (buildAsApplication) {
-    apply plugin: 'com.android.application'
-}
-else {
-    apply plugin: 'com.android.library'
-}
-
-android {
-    compileSdkVersion 34
-    defaultConfig {
-        if (buildAsApplication) {
-            applicationId "org.baixetube"
-        }
-        minSdkVersion 26
-        targetSdkVersion 34
-        versionCode 1
-        versionName "1.0"
-    }
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-        }
-    }
-    lintOptions {
-        abortOnError false
-    }
-}
-
-dependencies {
-    implementation fileTree(include: ['*.jar'], dir: 'libs')
-}
-"""
-with open(bg, 'w') as f:
-    f.write(novo)
-print("build.gradle substituido com sucesso")
-print("Linhas:", len(novo.splitlines()))
-PYEOF
-
-        echo "=== build.gradle final ==="
-        cat $PROJ/app/build.gradle
+        python3 $GITHUB_WORKSPACE/fix_gradle.py "$PROJ"
 
         chmod +x $PROJ/gradlew
         export JAVA_HOME=$JAVA
@@ -154,7 +107,7 @@ PYEOF
         mkdir -p $GITHUB_WORKSPACE/bin
         find $PROJ -name "*.apk" 2>/dev/null | while read apk; do
           cp "$apk" $GITHUB_WORKSPACE/bin/
-          echo "APK copiada: $apk"
+          echo "APK: $apk"
         done
         ls -lh $GITHUB_WORKSPACE/bin/ || echo "Sem APK"
 
