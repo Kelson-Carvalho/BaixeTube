@@ -1,48 +1,50 @@
-import os
-import sys
+import os, sys
 
 proj = sys.argv[1]
-bg = os.path.join(proj, "app", "build.gradle")
+bg   = os.path.join(proj, "app", "build.gradle")
 
-novo = (
-    "def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');\n"
-    "def buildAsApplication = !buildAsLibrary\n"
-    "if (buildAsApplication) {\n"
-    "    apply plugin: 'com.android.application'\n"
-    "}\n"
-    "else {\n"
-    "    apply plugin: 'com.android.library'\n"
-    "}\n"
-    "\n"
-    "android {\n"
-    "    compileSdkVersion 34\n"
-    "    defaultConfig {\n"
-    "        if (buildAsApplication) {\n"
-    '            applicationId "org.baixetube"\n'
-    "        }\n"
-    "        minSdkVersion 26\n"
-    "        targetSdkVersion 34\n"
-    "        versionCode 1\n"
-    '        versionName "1.0"\n'
-    "    }\n"
-    "    buildTypes {\n"
-    "        release {\n"
-    "            minifyEnabled false\n"
-    "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'\n"
-    "        }\n"
-    "    }\n"
-    "    lintOptions {\n"
-    "        abortOnError false\n"
-    "    }\n"
-    "}\n"
-    "\n"
-    "dependencies {\n"
-    "    implementation fileTree(include: ['*.jar'], dir: 'libs')\n"
-    "}\n"
-)
+linhas = [
+    "def buildAsLibrary = project.hasProperty('BUILD_AS_LIBRARY');",
+    "def buildAsApplication = !buildAsLibrary",
+    "if (buildAsApplication) {",
+    "    apply plugin: 'com.android.application'",
+    "}",
+    "else {",
+    "    apply plugin: 'com.android.library'",
+    "}",
+    "",
+    "android {",
+    "    namespace 'org.baixetube'",
+    "    compileSdkVersion 34",
+    "    defaultConfig {",
+    "        if (buildAsApplication) {",
+    '            applicationId "org.baixetube"',
+    "        }",
+    "        minSdkVersion 26",
+    "        targetSdkVersion 34",
+    "        versionCode 1",
+    '        versionName "1.0"',
+    "    }",
+    "    buildTypes {",
+    "        release {",
+    "            minifyEnabled false",
+    "            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'",
+    "        }",
+    "    }",
+    "    lintOptions {",
+    "        abortOnError false",
+    "    }",
+    "}",
+    "",
+    "dependencies {",
+    "    implementation fileTree(include: ['*.jar'], dir: 'libs')",
+    "}",
+]
+
+novo = "\n".join(linhas) + "\n"
 
 with open(bg, "w") as f:
     f.write(novo)
 
-print("build.gradle substituido!")
+print("build.gradle substituido com sucesso!")
 print(open(bg).read())
